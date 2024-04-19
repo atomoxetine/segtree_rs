@@ -1,158 +1,89 @@
-use std::ops::Add;
+use std::ops::{Add, Bound, RangeBounds, RangeInclusive, Sub};
 
-#[derive(Debug)]
-pub struct StaticSegtree<T: Clone> {
-    tree: Vec<T>,
-    data_len: usize,
-    merge_fn: fn(&T, &T) -> T,
-    neutral_elem: T,
-}
+pub mod static_segtree;
 
-impl<T> Default for StaticSegtree<T>
-where
-    T: Add<T, Output = T> + Clone + Default,
-{
-    fn default() -> StaticSegtree<T> {
-        StaticSegtree {
-            tree: Vec::new(),
-            data_len: 0,
-            merge_fn: |a, b| a.clone() + b.clone(),
-            neutral_elem: T::default(),
-        }
-    }
-}
+/// Segment Tree trait with common methods
+pub trait Segtree<T: Clone>: Clone + PartialEq {
 
-pub enum SegtreeAccessError {
-    IndexOutOfBounds,
-}
-
-pub enum SegtreeRangeError {
-    RangeOutOfBounds,
-    InvalidRange,
-}
-
-impl<T: Clone> StaticSegtree<T> {
-    pub fn from_slice(
+    /// Creates segtree from slice of type T, with a specified
+    /// merge function (allowing for non commutative operations)
+    /// and a neutral element (usually 0 or 1 when T is an integer)
+    ///
+    /// Make sure your merge function is associative and pure, otherwise
+    /// it will not work
+    fn from_slice(
         original: &[T],
         merge_fn: fn(&T, &T) -> T,
         neutral_elem: T,
-    ) -> StaticSegtree<T> {
-        let len = original.len();
-        if len == 0 {
-            return StaticSegtree {
-                tree: Vec::new(),
-                data_len: 0,
-                merge_fn,
-                neutral_elem,
-            };
-        }
+    ) -> Self;
 
-        let mut tree: Vec<T> = Vec::with_capacity(2 * len);
-        #[allow(clippy::uninit_vec)]
-        unsafe { tree.set_len(2 * len) };
+    /// Returns the length of raw data
+    fn len(&self) -> usize;
 
-        tree[len..(2*len)].clone_from_slice(original);
-        for i in (1..len).rev() {
-            tree[i] = merge_fn(&tree[i << 1], &tree[i << 1 | 1]);
-        }
-        tree[0] = neutral_elem.clone();
+    /// Returns true if there is no data
+    fn is_empty(&self) -> bool;
 
-        StaticSegtree {
-            tree,
-            data_len: len,
-            merge_fn,
-            neutral_elem,
-        }
-    }
+    /// Returns an immutable reference to data at specified
+    /// index without doing bounds checking
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe, as it results in undefined behaviour if run
+    /// with index out of bounds
+    unsafe fn get_unchecked(&self, index: usize) -> &T;
 
-    pub fn len(&self) -> usize {
-        self.data_len
-    }
+    /// Returns an immutable reference to data at specified
+    /// index while doing bounds checking
+    ///
+    /// Will return [None] if the index is out of bounds
+    fn get(&self, index: usize) -> Option<&T>;
 
-    pub fn is_empty(&self) -> bool {
-        self.data_len == 0
-    }
+    /// Sets the value on desired index without doing bounds checking
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe, as it results in undefined behaviour if run
+    /// with index out of bounds
+    unsafe fn set_unchecked(&mut self, index: usize, value: T);
 
-    pub fn set(&mut self, index: usize, value: T) {
-        let mut crr = index + self.data_len;
-        self.tree[crr] = value;
+    /// Sets the value on desired index while doing bounds checking
+    ///
+    /// Will return [None] if the index is out of bounds
+    fn set(&mut self, index: usize, value: T) -> Option<()>;
 
-        crr >>= 1;
+    /// Queries for data in range without doing bounds checking
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe, as it results in undefined behaviour if run
+    /// with index out of bounds
+    unsafe fn query_unchecked<R: RangeBounds<usize>>(&self, range: R) -> T;
 
-        while crr != 0 {
-            self.tree[crr] =
-                (self.merge_fn)(&self.tree[crr << 1], &self.tree[crr << 1 | 1]);
+    /// Queries for data in range while doing bounds checking
+    ///
+    /// Will return [None] if the index is out of bounds
+    fn query<R: RangeBounds<usize>>(&self, range: R) -> Option<T>;
+}
 
-            crr >>= 1;
-        }
-    }
+pub fn bounds_to_inclusive<
+    T: Copy + From<u8> + Add<Output = T> + Sub<Output = T>,
+    R: RangeBounds<T>,
+>(
+    range: R,
+    min: T,
+    max: T,
+) -> RangeInclusive<T> {
+    let start = match range.start_bound() {
+        Bound::Included(s) => *s,
+        Bound::Excluded(s) => *s + 1.into(),
+        Bound::Unbounded => min,
+    };
 
-    pub fn try_set(
-        &mut self,
-        index: usize,
-        value: T,
-    ) -> Result<(), SegtreeAccessError> {
-        if index >= self.data_len {
-            return Err(SegtreeAccessError::IndexOutOfBounds);
-        }
+    let end = match range.end_bound() {
+        Bound::Included(e) => *e,
+        Bound::Excluded(e) => *e - 1.into(),
+        Bound::Unbounded => max,
+    };
 
-        self.set(index, value);
-        Ok(())
-    }
-
-    pub fn get(&self, index: usize) -> &T {
-        &self.tree[index + self.data_len]
-    }
-
-    pub fn try_get(&self, index: usize) -> Result<&T, SegtreeAccessError> {
-        if index >= self.data_len {
-            Err(SegtreeAccessError::IndexOutOfBounds)
-        } else {
-            Ok(self.get(index))
-        }
-    }
-
-    pub fn query(&self, l: usize, r: usize) -> T {
-        let mut resl = self.neutral_elem.clone();
-        let mut resr = self.neutral_elem.clone();
-
-        let mut l = l + self.data_len;
-        let mut r = r + self.data_len;
-
-        while l < r {
-            if l & 1 == 1 {
-                resl = (self.merge_fn)(&resl, &self.tree[l]);
-                l += 1;
-            }
-            if r & 1 == 0 {
-                resr = (self.merge_fn)(&self.tree[r], &resr);
-                r -= 1;
-            }
-
-            l >>= 1;
-            r >>= 1;
-        }
-
-        if l == r && l > 0 {
-            resl = (self.merge_fn)(&resl, &self.tree[l]);
-        }
-
-        (self.merge_fn)(&resl, &resr)
-    }
-
-    pub fn try_query(
-        &self,
-        l: usize,
-        r: usize,
-    ) -> Result<T, SegtreeRangeError> {
-        if l > r {
-            Err(SegtreeRangeError::InvalidRange)
-        } else if r >= self.data_len {
-            Err(SegtreeRangeError::RangeOutOfBounds)
-        } else if l == r {
-            Ok(self.get(l).clone())
-        } else {
-            Ok(self.query(l, r))
-        }
-    }
+    start..=end
 }

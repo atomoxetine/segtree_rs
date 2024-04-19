@@ -3,7 +3,7 @@ mod tests {
     use std::ops::Range;
 
     use rand::{rngs::StdRng, Rng, SeedableRng};
-    use segtree_rs::StaticSegtree;
+    use segtree_rs::{static_segtree::StaticSegtree, Segtree};
 
     #[test]
     fn static_segtree() {
@@ -31,7 +31,7 @@ mod tests {
         dbg!(&segtree);
 
         let data_query = data.iter().fold(Vec::new(), |a, b| MERGE_FN(&a, &b));
-        let tree_query = segtree.query(0, N - 1);
+        let tree_query = segtree.query(0..N).unwrap();
 
         assert_eq!(data_query, tree_query);
 
@@ -46,17 +46,20 @@ mod tests {
                 data[index] = value.clone();
                 segtree.set(index, value);
 
-                assert_eq!(data[index], *segtree.get(index))
+                assert_eq!(data[index], *segtree.get(index).unwrap())
             } else {
                 let l = rng.gen_range(0..N);
                 let r = rng.gen_range(l..N);
                 let data_query = data[l..=r]
                     .iter()
                     .fold(Vec::new(), |a, b| MERGE_FN(&a, &b));
-                let tree_query = segtree.query(l, r);
+                let tree_query = segtree.query(l..(r+1)).unwrap();
 
                 assert_eq!(data_query, tree_query);
             }
         }
+
+        let segtree2 = segtree.clone();
+        assert_eq!(segtree, segtree2);
     }
 }
