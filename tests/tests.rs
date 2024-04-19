@@ -25,7 +25,7 @@ mod tests {
             inner
         });
 
-        let mut segtree = StaticSegtree::from_vec(&data, MERGE_FN, Vec::new());
+        let mut segtree = StaticSegtree::from_slice(&data, MERGE_FN, Vec::new());
 
         dbg!(&data);
         dbg!(&segtree);

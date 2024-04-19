@@ -5,19 +5,19 @@ pub struct StaticSegtree<T: Clone> {
     tree: Vec<T>,
     data_len: usize,
     merge_fn: fn(&T, &T) -> T,
-    default: T,
+    neutral_elem: T,
 }
 
-impl<T> StaticSegtree<T>
+impl<T> Default for StaticSegtree<T>
 where
     T: Add<T, Output = T> + Clone + Default,
 {
-    pub fn new() -> StaticSegtree<T> {
+    fn default() -> StaticSegtree<T> {
         StaticSegtree {
             tree: Vec::new(),
             data_len: 0,
             merge_fn: |a, b| a.clone() + b.clone(),
-            default: T::default(),
+            neutral_elem: T::default(),
         }
     }
 }
@@ -32,33 +32,45 @@ pub enum SegtreeRangeError {
 }
 
 impl<T: Clone> StaticSegtree<T> {
-    pub fn from_vec(
-        original: &Vec<T>,
+    pub fn from_slice(
+        original: &[T],
         merge_fn: fn(&T, &T) -> T,
-        default: T,
+        neutral_elem: T,
     ) -> StaticSegtree<T> {
         let len = original.len();
-        let mut tree: Vec<T> = Vec::with_capacity(2 * len);
-        unsafe { tree.set_len(2 * len) };
-
-        for i in 0..len {
-            tree[i + len] = original[i].clone();
+        if len == 0 {
+            return StaticSegtree {
+                tree: Vec::new(),
+                data_len: 0,
+                merge_fn,
+                neutral_elem,
+            };
         }
 
+        let mut tree: Vec<T> = Vec::with_capacity(2 * len);
+        #[allow(clippy::uninit_vec)]
+        unsafe { tree.set_len(2 * len) };
+
+        tree[len..(2*len)].clone_from_slice(original);
         for i in (1..len).rev() {
             tree[i] = merge_fn(&tree[i << 1], &tree[i << 1 | 1]);
         }
+        tree[0] = neutral_elem.clone();
 
         StaticSegtree {
             tree,
             data_len: len,
             merge_fn,
-            default,
+            neutral_elem,
         }
     }
 
     pub fn len(&self) -> usize {
         self.data_len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data_len == 0
     }
 
     pub fn set(&mut self, index: usize, value: T) {
@@ -101,8 +113,8 @@ impl<T: Clone> StaticSegtree<T> {
     }
 
     pub fn query(&self, l: usize, r: usize) -> T {
-        let mut resl = self.default.clone();
-        let mut resr = self.default.clone();
+        let mut resl = self.neutral_elem.clone();
+        let mut resr = self.neutral_elem.clone();
 
         let mut l = l + self.data_len;
         let mut r = r + self.data_len;
